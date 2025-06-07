@@ -8,7 +8,7 @@
       "nodes": {
         "influxdb-config": "nodes/influxdb-config.js",
         "influxdb-output-http-write": "nodes/influxdb-output-http-write.js",
-        "influxdb-query": "nodes/influxdb-query.js"
+        "influxdb-query": "nodes/influxdb-http-query.js"
       }
   },
   "author": "buildingblocks",

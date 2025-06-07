@@ -1,4 +1,5 @@
 module.exports = function(RED) {
+    // Define node for writing line protocol data to InfluxDB
     function InfluxDBOutputHttpWriteNode(config) {
         RED.nodes.createNode(this, config);
         this.influxConfig = RED.nodes.getNode(config.influxConfig);
@@ -6,16 +7,19 @@ module.exports = function(RED) {
         const node = this;
 
         node.on('input', function(msg) {
+            // Validate InfluxDB configuration
             if (!node.influxConfig) {
                 node.error("No InfluxDB configuration defined", msg);
                 return;
             }
+            // Validate payload as an array of line protocol strings
             if (!Array.isArray(msg.payload)) {
                 node.error("Invalid payload: Expected array of line protocol strings", msg);
                 return;
             }
 
             try {
+                // Validate token
                 const token = node.influxConfig.token;
                 if (!token) {
                     node.error("No token provided in InfluxDB configuration", msg);
@@ -29,14 +33,15 @@ module.exports = function(RED) {
                         return false;
                     }
                     const trimmedLine = line.trim();
-                    // Updated regex to allow escaped spaces in tags
-                    if (!trimmedLine.match(/^[^,]+,(?:[^,=\\]+|\\ )+=?(?:[^,=\\]+|\\ )* value=[0-9.]+ [0-9]+$/)) {
+                    // Regex allows escaped spaces, commas, or equals signs in measurement
+                    if (!trimmedLine.match(/^(?:[^, =\\]+|\\[, =])+\svalue=[0-9.]+ [0-9]+$/)) {
                         node.warn(`Invalid line format: ${trimmedLine}`);
                         return false;
                     }
                     return true;
                 });
 
+                // Check if any valid lines remain
                 if (lines.length === 0) {
                     node.error("No valid line protocol strings in payload", msg);
                     return;
@@ -59,13 +64,11 @@ module.exports = function(RED) {
                 const taggedLines = extraTags ? lines.map(line => {
                     const parts = line.trim().split(' ');
                     const timestamp = parts.pop();
-                    const [measurementTags, fields] = parts.join(' ').split(/ (?=value=)/);
-                    return `${measurementTags}${extraTags} ${fields} ${timestamp}`.trim();
+                    const [measurement, fields] = parts.join(' ').split(/ (?=value=)/);
+                    return `${measurement}${extraTags} ${fields} ${timestamp}`.trim();
                 }) : lines;
 
-                node.log(`[${node.id}] Sending Line Protocol:\n${taggedLines.join('\n')}`);
-                node.log(`[${node.id}] HTTP Request: URL=${msg.url}, Method=POST, Headers=${JSON.stringify(msg.headers)}, Payload=\n${taggedLines.join('\n')}`);
-
+                // Configure HTTP request
                 const isV3 = node.influxConfig.version === '3';
                 const endpoint = isV3 ? '/api/v3/write_lp' : '/api/v2/write';
                 const params = isV3
@@ -78,7 +81,9 @@ module.exports = function(RED) {
                     'Content-Type': 'text/plain; charset=utf-8'
                 };
                 msg.payload = taggedLines.join('\n');
+                msg.timeout = config.timeout || 5000;
 
+                // Send the message to the next node
                 node.send(msg);
             } catch (e) {
                 node.error(`Failed to process or send request: ${e.message}`, msg);
